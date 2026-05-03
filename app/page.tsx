@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  type TouchEvent as ReactTouchEvent,
   type PointerEvent as ReactPointerEvent,
   useRef,
   useState,
@@ -94,6 +95,8 @@ export default function Home() {
   const [zoomLevel, setZoomLevel] = useState(100);
   const [viewportReady, setViewportReady] = useState(false);
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const [isMultiTouchActive, setIsMultiTouchActive] = useState(false);
 
   const formattedNominal = useMemo(() => formatCurrency(nominal), [nominal]);
   const tanggalWaktuValue = useMemo(() => {
@@ -156,6 +159,24 @@ export default function Home() {
     transformRef.current.setTransform(positionX, positionY, RESET_SCALE, 200, "easeOut");
     setZoomLevel(Math.round(RESET_SCALE * 100));
   }, [viewportSize.height, viewportSize.width]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const mediaQuery = window.matchMedia("(pointer: coarse)");
+    const updateTouchMode = () => {
+      setIsTouchDevice(mediaQuery.matches || navigator.maxTouchPoints > 0);
+    };
+
+    updateTouchMode();
+    mediaQuery.addEventListener("change", updateTouchMode);
+
+    return () => {
+      mediaQuery.removeEventListener("change", updateTouchMode);
+    };
+  }, []);
 
   useEffect(() => {
     const viewportElement = viewportRef.current;
@@ -239,6 +260,33 @@ export default function Home() {
     event.preventDefault();
     event.stopPropagation();
     action();
+  };
+
+  const handleViewportTouchStart = (event: ReactTouchEvent<HTMLDivElement>) => {
+    if (event.touches.length >= 2) {
+      setIsMultiTouchActive(true);
+      return;
+    }
+
+    setIsMultiTouchActive(false);
+  };
+
+  const handleViewportTouchMove = (event: ReactTouchEvent<HTMLDivElement>) => {
+    if (event.touches.length >= 2) {
+      setIsMultiTouchActive(true);
+      return;
+    }
+
+    setIsMultiTouchActive(false);
+  };
+
+  const handleViewportTouchEnd = (event: ReactTouchEvent<HTMLDivElement>) => {
+    if (event.touches.length >= 2) {
+      setIsMultiTouchActive(true);
+      return;
+    }
+
+    setIsMultiTouchActive(false);
   };
 
   return (
@@ -333,10 +381,10 @@ export default function Home() {
             maxScale={MAX_SCALE}
             minScale={MIN_SCALE}
             panning={{
-              disabled: false,
+              disabled: isTouchDevice ? !isMultiTouchActive : false,
               velocityDisabled: true,
             }}
-            pinch={{ step: 5 }}
+            pinch={{ allowPanning: true, step: 5 }}
             wheel={{ step: 0.12 }}
             onTransform={(_, state) => {
               setZoomLevel(Math.round(state.scale * 100));
@@ -407,7 +455,15 @@ export default function Home() {
 
                 <div
                   ref={viewportRef}
-                  className="viewport relative z-0 min-h-[720px] touch-none overflow-hidden rounded-[28px] border border-[#e6dfd7] bg-[#ede8e1] cursor-grab active:cursor-grabbing"
+                  className={`viewport relative z-0 min-h-[720px] overflow-hidden rounded-[28px] border border-[#e6dfd7] bg-[#ede8e1] ${
+                    isTouchDevice
+                      ? "touch-pan-y"
+                      : "touch-none cursor-grab active:cursor-grabbing"
+                  }`}
+                  onTouchEnd={handleViewportTouchEnd}
+                  onTouchMove={handleViewportTouchMove}
+                  onTouchStart={handleViewportTouchStart}
+                  style={{ touchAction: isTouchDevice ? "pan-y" : "none" }}
                 >
                   <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.45),rgba(237,232,225,0.95))]" />
 
