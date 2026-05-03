@@ -7,7 +7,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { toPng } from "html-to-image";
 import {
@@ -19,9 +18,22 @@ import {
 const CANVAS_WIDTH = 412;
 const CANVAS_HEIGHT = 917;
 const VIEWPORT_PADDING = 40;
+const RESET_SCALE = 0.64;
+const RESET_OFFSET_Y = -36;
 const MIN_SCALE = 0.35;
 const MAX_SCALE = 3;
-const defaultDate = "2026-04-29T13:22";
+
+function getNowDateTime() {
+  const now = new Date();
+  const date = [
+    now.getFullYear(),
+    `${now.getMonth() + 1}`.padStart(2, "0"),
+    `${now.getDate()}`.padStart(2, "0"),
+  ].join("-");
+  const time = [`${now.getHours()}`.padStart(2, "0"), `${now.getMinutes()}`.padStart(2, "0")].join(":");
+
+  return { date, time };
+}
 
 function formatCurrency(value: string) {
   const normalized = Number(value.replace(/[^\d]/g, "")) || 0;
@@ -56,62 +68,62 @@ function formatReceiptDate(value: string) {
 
 function CheckIcon() {
   return (
-    <svg aria-hidden="true" className="h-14 w-14" fill="none" viewBox="0 0 56 56">
-      <circle cx="28" cy="28" r="28" fill="#5ACB72" />
-      <path
-        d="m17.5 28.4 7.16 7.1L38.5 21.7"
-        stroke="#fff"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="4.2"
+    <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#5ACB72]">
+      <Image
+        alt=""
+        aria-hidden="true"
+        className="h-[22px] w-7"
+        height={22}
+        src="/assets/check-1.svg"
+        width={28}
       />
-    </svg>
+    </div>
   );
 }
 
 export default function Home() {
+  const defaultNow = useMemo(() => getNowDateTime(), []);
   const canvasRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
   const transformRef = useRef<ReactZoomPanPinchRef | null>(null);
-  const [nominal, setNominal] = useState("32000");
-  const [tanggal, setTanggal] = useState(defaultDate);
+  const [nominal, setNominal] = useState("0");
+  const [tanggal, setTanggal] = useState(defaultNow.date);
+  const [waktu, setWaktu] = useState(defaultNow.time);
   const [isExporting, setIsExporting] = useState(false);
-  const [isHandMode, setIsHandMode] = useState(false);
   const [zoomLevel, setZoomLevel] = useState(100);
   const [viewportReady, setViewportReady] = useState(false);
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
 
   const formattedNominal = useMemo(() => formatCurrency(nominal), [nominal]);
-  const formattedDate = useMemo(() => formatReceiptDate(tanggal), [tanggal]);
-
-  const isTypingTarget = useCallback((target: EventTarget | null) => {
-    if (!(target instanceof HTMLElement)) {
-      return false;
+  const tanggalWaktuValue = useMemo(() => {
+    if (!tanggal && !waktu) {
+      return "";
     }
 
-    const tagName = target.tagName.toLowerCase();
+    return `${tanggal}T${waktu || "00:00"}`;
+  }, [tanggal, waktu]);
+  const formattedDate = useMemo(() => formatReceiptDate(tanggalWaktuValue), [tanggalWaktuValue]);
 
-    return (
-      tagName === "input" ||
-      tagName === "textarea" ||
-      tagName === "select" ||
-      target.isContentEditable
-    );
-  }, []);
-
-  const getFitScale = useCallback((width: number, height: number) => {
+  const getViewportFitScale = useCallback((width: number, height: number, padding: number) => {
     if (!width || !height) {
       return 1;
     }
 
-    const availableWidth = Math.max(width - VIEWPORT_PADDING * 2, 1);
-    const availableHeight = Math.max(height - VIEWPORT_PADDING * 2, 1);
+    const availableWidth = Math.max(width - padding * 2, 1);
+    const availableHeight = Math.max(height - padding * 2, 1);
 
     return Math.min(
       Math.max(Math.min(availableWidth / CANVAS_WIDTH, availableHeight / CANVAS_HEIGHT), MIN_SCALE),
       MAX_SCALE,
     );
   }, []);
+
+  const getFitScale = useCallback(
+    (width: number, height: number) => {
+      return getViewportFitScale(width, height, VIEWPORT_PADDING);
+    },
+    [getViewportFitScale],
+  );
 
   const centerScale = useCallback(
     (scale: number) => {
@@ -133,16 +145,16 @@ export default function Home() {
   }, [centerScale, getFitScale, viewportSize.height, viewportSize.width]);
 
   const handleResetView = useCallback(() => {
-    centerScale(1);
-  }, [centerScale]);
+    if (!transformRef.current || !viewportSize.width || !viewportSize.height) {
+      return;
+    }
 
-  const handleZoomIn = useCallback(() => {
-    transformRef.current?.zoomIn(0.2, 200, "easeOut");
-  }, []);
+    const positionX = (viewportSize.width - CANVAS_WIDTH * RESET_SCALE) / 2;
+    const positionY = (viewportSize.height - CANVAS_HEIGHT * RESET_SCALE) / 2 + RESET_OFFSET_Y;
 
-  const handleZoomOut = useCallback(() => {
-    transformRef.current?.zoomOut(0.2, 200, "easeOut");
-  }, []);
+    transformRef.current.setTransform(positionX, positionY, RESET_SCALE, 200, "easeOut");
+    setZoomLevel(Math.round(RESET_SCALE * 100));
+  }, [viewportSize.height, viewportSize.width]);
 
   useEffect(() => {
     const viewportElement = viewportRef.current;
@@ -179,23 +191,6 @@ export default function Home() {
     handleFitView();
   }, [handleFitView, viewportReady]);
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.repeat || event.key.toLowerCase() !== "h" || isTypingTarget(event.target)) {
-        return;
-      }
-
-      event.preventDefault();
-      setIsHandMode((current) => !current);
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [isTypingTarget]);
-
   const handleExport = async () => {
     if (!canvasRef.current) {
       return;
@@ -230,17 +225,14 @@ export default function Home() {
     }
   };
 
-  const handleViewportKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (event.key.toLowerCase() !== "h" || isTypingTarget(event.target)) {
-      return;
-    }
-
-    event.preventDefault();
-    setIsHandMode((current) => !current);
+  const handleSetNow = () => {
+    const { date, time } = getNowDateTime();
+    setTanggal(date);
+    setWaktu(time);
   };
 
   return (
-    <main className="min-h-screen bg-[#f4f1ec] px-4 py-6 text-[#1f1f1f] md:px-6 md:py-8">
+    <main className="min-h-screen overflow-y-auto bg-[#f4f1ec] px-4 py-6 text-[#1f1f1f] md:px-6 md:py-8 xl:h-screen xl:overflow-hidden">
       <div className="mx-auto flex max-w-7xl flex-col gap-6 xl:min-h-[calc(100vh-4rem)] xl:flex-row xl:items-start">
         <section className="w-full rounded-[32px] bg-white p-5 shadow-[0_20px_60px_rgba(15,23,42,0.08)] md:p-6 xl:sticky xl:top-6 xl:max-w-[360px]">
           <div className="space-y-1">
@@ -265,14 +257,49 @@ export default function Home() {
               />
             </label>
 
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-medium text-[#303030]">Tanggal & Jam</span>
+                <button
+                  className="rounded-full border border-[#ffd8c9] bg-[#fff4ed] px-3 py-1 text-xs font-medium text-[#ff5a1f] transition hover:border-[#ff5a1f]"
+                  onClick={handleSetNow}
+                  type="button"
+                >
+                  Set waktu sekarang
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block space-y-2">
+                  <span className="text-xs font-medium text-[#7d7d7d]">Tanggal</span>
+                  <input
+                    className="h-12 w-full rounded-2xl border border-[#e9e0d8] bg-[#fffaf6] px-4 text-base outline-none transition focus:border-[#ff5a1f]"
+                    onChange={(event) => setTanggal(event.target.value)}
+                    type="date"
+                    value={tanggal}
+                  />
+                </label>
+
+                <label className="block space-y-2">
+                  <span className="text-xs font-medium text-[#7d7d7d]">Jam</span>
+                  <input
+                    className="h-12 w-full rounded-2xl border border-[#e9e0d8] bg-[#fffaf6] px-4 text-base outline-none transition focus:border-[#ff5a1f]"
+                    onChange={(event) => setWaktu(event.target.value)}
+                    type="time"
+                    value={waktu}
+                  />
+                </label>
+              </div>
+            </div>
+
             <label className="block space-y-2">
-              <span className="text-sm font-medium text-[#303030]">Tanggal</span>
-              <input
-                className="h-12 w-full rounded-2xl border border-[#e9e0d8] bg-[#fffaf6] px-4 text-base outline-none transition focus:border-[#ff5a1f]"
-                onChange={(event) => setTanggal(event.target.value)}
-                type="datetime-local"
-                value={tanggal}
-              />
+              <span className="text-sm font-medium text-[#303030]">Template</span>
+              <select
+                className="h-12 w-full rounded-2xl border border-[#e9e0d8] bg-[#fffaf6] px-4 text-base text-[#7d7d7d] outline-none transition focus:border-[#ff5a1f]"
+                defaultValue=""
+              >
+                <option value="">Pilih template</option>
+              </select>
             </label>
 
             <button
@@ -287,90 +314,79 @@ export default function Home() {
         </section>
 
         <section className="preview-shell flex min-h-[720px] flex-1 flex-col">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-[20px] bg-white/70 px-4 py-3 backdrop-blur">
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                className="rounded-xl border border-[#d9d2ca] bg-white px-3 py-2 text-sm font-medium text-[#303030] transition hover:border-[#ff5a1f] hover:text-[#ff5a1f]"
-                onClick={handleFitView}
-                type="button"
-              >
-                Fit
-              </button>
-              <button
-                className="rounded-xl border border-[#d9d2ca] bg-white px-3 py-2 text-sm font-medium text-[#303030] transition hover:border-[#ff5a1f] hover:text-[#ff5a1f]"
-                onClick={handleResetView}
-                type="button"
-              >
-                100%
-              </button>
-              <button
-                aria-label="Zoom out"
-                className="rounded-xl border border-[#d9d2ca] bg-white px-3 py-2 text-sm font-medium text-[#303030] transition hover:border-[#ff5a1f] hover:text-[#ff5a1f]"
-                onClick={handleZoomOut}
-                type="button"
-              >
-                −
-              </button>
-              <button
-                aria-label="Zoom in"
-                className="rounded-xl border border-[#d9d2ca] bg-white px-3 py-2 text-sm font-medium text-[#303030] transition hover:border-[#ff5a1f] hover:text-[#ff5a1f]"
-                onClick={handleZoomIn}
-                type="button"
-              >
-                +
-              </button>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2 text-sm">
-              <span className="rounded-full bg-[#fff4ed] px-3 py-1 text-[#ff5a1f]">
-                {zoomLevel}%
-              </span>
-              <button
-                className={`rounded-full border px-3 py-1.5 font-medium transition ${
-                  isHandMode
-                    ? "border-[#ff5a1f] bg-[#ff5a1f] text-white"
-                    : "border-[#d9d2ca] bg-white text-[#303030]"
-                }`}
-                onClick={() => setIsHandMode((current) => !current)}
-                type="button"
-              >
-                Hand Mode: H
-              </button>
-            </div>
-          </div>
-
-          <div
-            ref={viewportRef}
-            className={`viewport relative min-h-[720px] overflow-hidden rounded-[28px] border border-[#e6dfd7] bg-[#ede8e1] ${
-              isHandMode ? "cursor-grab active:cursor-grabbing" : "cursor-default"
-            }`}
-            onKeyDown={handleViewportKeyDown}
-            tabIndex={0}
+          <TransformWrapper
+            ref={transformRef}
+            centerOnInit={false}
+            disabled={!viewportReady}
+            doubleClick={{ disabled: true }}
+            limitToBounds={false}
+            maxScale={MAX_SCALE}
+            minScale={MIN_SCALE}
+            panning={{
+              disabled: false,
+              velocityDisabled: true,
+            }}
+            pinch={{ step: 5 }}
+            wheel={{ step: 0.12 }}
+            onTransform={(_, state) => {
+              setZoomLevel(Math.round(state.scale * 100));
+            }}
           >
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.45),rgba(237,232,225,0.95))]" />
+            {(controls) => (
+              <>
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-[20px] bg-white/70 px-4 py-3 backdrop-blur">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      className="rounded-xl border border-[#d9d2ca] bg-white px-3 py-2 text-sm font-medium text-[#303030] transition hover:border-[#ff5a1f] hover:text-[#ff5a1f]"
+                      onClick={() => {
+                        handleResetView();
+                        controls.setTransform(
+                          (viewportSize.width - CANVAS_WIDTH * RESET_SCALE) / 2,
+                          (viewportSize.height - CANVAS_HEIGHT * RESET_SCALE) / 2 + RESET_OFFSET_Y,
+                          RESET_SCALE,
+                          200,
+                          "easeOut",
+                        );
+                      }}
+                      type="button"
+                    >
+                      100%
+                    </button>
+                    <button
+                      aria-label="Zoom out"
+                      className="rounded-xl border border-[#d9d2ca] bg-white px-3 py-2 text-sm font-medium text-[#303030] transition hover:border-[#ff5a1f] hover:text-[#ff5a1f]"
+                      onClick={() => controls.zoomOut(0.2, 200, "easeOut")}
+                      type="button"
+                    >
+                      −
+                    </button>
+                    <button
+                      aria-label="Zoom in"
+                      className="rounded-xl border border-[#d9d2ca] bg-white px-3 py-2 text-sm font-medium text-[#303030] transition hover:border-[#ff5a1f] hover:text-[#ff5a1f]"
+                      onClick={() => controls.zoomIn(0.2, 200, "easeOut")}
+                      type="button"
+                    >
+                      +
+                    </button>
+                  </div>
 
-            <TransformWrapper
-              ref={transformRef}
-              centerOnInit={false}
-              disabled={!viewportReady}
-              doubleClick={{ disabled: true }}
-              limitToBounds={false}
-              maxScale={MAX_SCALE}
-              minScale={MIN_SCALE}
-              panning={{
-                disabled: !isHandMode,
-                velocityDisabled: true,
-              }}
-              pinch={{ step: 5 }}
-              wheel={{ step: 0.12 }}
-              onTransform={(_, state) => {
-                setZoomLevel(Math.round(state.scale * 100));
-              }}
-            >
-              <TransformComponent
-                contentClass="!w-auto !h-auto"
-                wrapperClass="!h-full !w-full"
-              >
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                    <span className="rounded-full bg-[#fff4ed] px-3 py-1 text-[#ff5a1f]">
+                      {zoomLevel}%
+                    </span>
+                  </div>
+                </div>
+
+                <div
+                  ref={viewportRef}
+                  className="viewport relative min-h-[720px] touch-none overflow-hidden rounded-[28px] border border-[#e6dfd7] bg-[#ede8e1] cursor-grab active:cursor-grabbing"
+                >
+                  <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.45),rgba(237,232,225,0.95))]" />
+
+                  <TransformComponent
+                    contentClass="!w-auto !h-auto"
+                    wrapperClass="!h-full !w-full"
+                  >
                 <div
                   className="artboard-layer origin-top-left"
                   style={{ width: CANVAS_WIDTH, height: CANVAS_HEIGHT }}
@@ -504,17 +520,15 @@ export default function Home() {
                           />
                           <span>Klaim dari Aplikasi ShopeePay</span>
                         </button>
-
-                        <div className="pb-1 pt-6">
-                          <div className="mx-auto h-[5px] w-[118px] rounded-full bg-[#111111]" />
-                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
-              </TransformComponent>
-            </TransformWrapper>
-          </div>
+                  </TransformComponent>
+                </div>
+              </>
+            )}
+          </TransformWrapper>
         </section>
       </div>
     </main>
