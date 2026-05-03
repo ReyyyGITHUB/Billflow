@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  type PointerEvent as ReactPointerEvent,
   useRef,
   useState,
 } from "react";
@@ -231,6 +232,15 @@ export default function Home() {
     setWaktu(time);
   };
 
+  const handleToolbarPointerUp = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+    action: () => void,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    action();
+  };
+
   return (
     <main className="min-h-screen overflow-y-auto bg-[#f4f1ec] px-4 py-6 text-[#1f1f1f] md:px-6 md:py-8 xl:h-screen xl:overflow-hidden">
       <div className="mx-auto flex max-w-7xl flex-col gap-6 xl:min-h-[calc(100vh-4rem)] xl:flex-row xl:items-start">
@@ -334,7 +344,7 @@ export default function Home() {
           >
             {(controls) => (
               <>
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-[20px] bg-white/70 px-4 py-3 backdrop-blur">
+                <div className="relative z-[20] mb-3 flex flex-wrap items-center justify-between gap-3 rounded-[20px] bg-white/70 px-4 py-3 backdrop-blur">
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       className="rounded-xl border border-[#d9d2ca] bg-white px-3 py-2 text-sm font-medium text-[#303030] transition hover:border-[#ff5a1f] hover:text-[#ff5a1f]"
@@ -348,6 +358,18 @@ export default function Home() {
                           "easeOut",
                         );
                       }}
+                      onPointerUp={(event) =>
+                        handleToolbarPointerUp(event, () => {
+                          handleResetView();
+                          controls.setTransform(
+                            (viewportSize.width - CANVAS_WIDTH * RESET_SCALE) / 2,
+                            (viewportSize.height - CANVAS_HEIGHT * RESET_SCALE) / 2 + RESET_OFFSET_Y,
+                            RESET_SCALE,
+                            200,
+                            "easeOut",
+                          );
+                        })
+                      }
                       type="button"
                     >
                       100%
@@ -356,6 +378,9 @@ export default function Home() {
                       aria-label="Zoom out"
                       className="rounded-xl border border-[#d9d2ca] bg-white px-3 py-2 text-sm font-medium text-[#303030] transition hover:border-[#ff5a1f] hover:text-[#ff5a1f]"
                       onClick={() => controls.zoomOut(0.2, 200, "easeOut")}
+                      onPointerUp={(event) =>
+                        handleToolbarPointerUp(event, () => controls.zoomOut(0.2, 200, "easeOut"))
+                      }
                       type="button"
                     >
                       −
@@ -364,6 +389,9 @@ export default function Home() {
                       aria-label="Zoom in"
                       className="rounded-xl border border-[#d9d2ca] bg-white px-3 py-2 text-sm font-medium text-[#303030] transition hover:border-[#ff5a1f] hover:text-[#ff5a1f]"
                       onClick={() => controls.zoomIn(0.2, 200, "easeOut")}
+                      onPointerUp={(event) =>
+                        handleToolbarPointerUp(event, () => controls.zoomIn(0.2, 200, "easeOut"))
+                      }
                       type="button"
                     >
                       +
@@ -379,7 +407,7 @@ export default function Home() {
 
                 <div
                   ref={viewportRef}
-                  className="viewport relative min-h-[720px] touch-none overflow-hidden rounded-[28px] border border-[#e6dfd7] bg-[#ede8e1] cursor-grab active:cursor-grabbing"
+                  className="viewport relative z-0 min-h-[720px] touch-none overflow-hidden rounded-[28px] border border-[#e6dfd7] bg-[#ede8e1] cursor-grab active:cursor-grabbing"
                 >
                   <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.45),rgba(237,232,225,0.95))]" />
 
